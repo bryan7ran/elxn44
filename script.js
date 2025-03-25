@@ -25,7 +25,7 @@ var esriLayer = L.esri.featureLayer({
             parseBackgroundData(attributes);
 
             // Execute additional script for riding results
-            ridingResults(attributes['FED_NUM']);
+            ridingResults(attributes['FED_NUM'], attributes['PD_NUM']);
         });
     }
 }).addTo(map);
@@ -41,8 +41,7 @@ function parseBackgroundData(attributes) {
     // Implement your data parsing logic here
 }
 
-function ridingResults(fedNum) {
-    // Fetch the CSV based on FED_NUM from the 'results' subdirectory
+function ridingResults(fedNum, pdNum) {
     fetch(`results/pollbypoll_bureauparbureau${fedNum}.csv`)
         .then(response => {
             if (!response.ok) {
@@ -51,34 +50,58 @@ function ridingResults(fedNum) {
             return response.text();
         })
         .then(data => {
-            // Parse CSV and update popup content dynamically
-            const parsedData = parseCSV(data); // implement parseCSV accordingly
-            updatePopup(parsedData); // implement updatePopup to modify the popup
+            const parsedData = parseCSV(data);
+            
+            // Filter for specific polling division (pdNum)
+            const filteredResults = parsedData.filter(row => row['Polling Division Number'] === pdNum);
+
+            if (filteredResults.length === 0) {
+                throw new Error(`No data found for Polling Division ${pdNum}.`);
+            }
+
+            updatePopup(filteredResults);
         })
         .catch(error => {
-            console.error('Error fetching or parsing CSV:', error);
-            updatePopup({ error: error.message }); // Show a friendly message in popup
+            console.error('Error:', error);
+            updatePopup({ error: error.message });
         });
 }
 
-// Example helper functions:
-function parseCSV(csvText) {
-    // Implement CSV parsing logic (use libraries like PapaParse for simplicity)
-    return Papa.parse(csvText, { header: true }).data;
+// Simple CSV parser (implement as needed or use a library like PapaParse)
+function parseCSV(data) {
+    const rows = data.trim().split('\n');
+    const headers = rows[0].split(',');
+
+    return rows.slice(1).map(row => {
+        const values = row.split(',');
+        return headers.reduce((acc, header, i) => {
+            acc[header.trim()] = values[i].trim();
+            return acc;
+        }, {});
+    });
 }
 
+// Sample updatePopup function
 function updatePopup(data) {
-    let popupContent = '';
-    
     if (data.error) {
-        popupContent = `<strong>Error:</strong> ${data.error}`;
+        document.getElementById('popup-content').innerHTML = `<div class="error">${data.error}</div>`;
     } else {
-        popupContent = `<strong>Additional Riding Results:</strong><br>`;
-        data.forEach(item => {
-            popupContent += `${item.attribute}: ${item.value}<br>`;
+        let html = '<table><tr>';
+        Object.keys(data[0]).forEach(header => {
+            html += `<th>${header}</th>`;
         });
-    }
+        html += '</tr>';
 
-    // Assuming you have reference to the current popup or layer:
-    currentLayer.getPopup().setContent(currentLayer.getPopup().getContent() + '<br>' + popupContent);
+        data.forEach(row => {
+            html += '<tr>';
+            Object.values(row).forEach(value => {
+                html += `<td>${value}</td>`;
+            });
+            html += '</tr>';
+        });
+
+        html += '</table>';
+
+        document.getElementById('popup-content').innerHTML = html;
+    }
 }
